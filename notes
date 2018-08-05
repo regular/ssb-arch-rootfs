@@ -1,0 +1,170 @@
+This is what happens in archiso's build.sh
+------
+
+56 make_basefs() {
+
+  - installs packages: 
+      base syslinux haveged intel-ucode memtest86+ mkinitcpio-nfs-utils nbd zsh
+
+67 make_packages_efi() {                                                                                
+    - installs package efitools
+
+ 72 make_setup_mkinitcpio() {
+71 # Copy mkinitcpio archiso hooks and build initramfs (airootfs)                                                                 
+ 74     mkdir -p /etc/initcpio/hooks
+ 75     mkdir -p /etc/initcpio/install
+
+  hooks="\
+    archiso \
+    archiso_shutdown \
+    archiso_pxe_common \
+    archiso_pxe_nbd \
+    archiso_pxe_http \
+    archiso_pxe_nfs \
+    archiso_loop_mnt \
+  "
+  for _hook in $hooks; do
+ 77         cp /usr/lib/initcpio/hooks/${_hook} /etc/initcpio/hooks
+ 78         cp /usr/lib/initcpio/install/${_hook} /etc/initcpio/install
+ 79     done
+ 80     sed -i "s|/usr/lib/initcpio/|/etc/initcpio/|g" ${work_dir}/${arch}/airootfs/etc/initcpio/install/archiso_shutdown
+ 81     cp /usr/lib/initcpio/install/archiso_kms /etc/initcpio/install
+ 82     cp /usr/lib/initcpio/archiso_shutdown /etc/initcpio
+ 83     cp ${script_path}/mkinitcpio.conf /etc/mkinitcpio-archiso.conf
+ 84 
+
+For signing the squashfs image (we skip this step)
+        gnupg_fd=
+ 85     if [[ ${gpg_key} ]]; then
+ 86       gpg --export ${gpg_key} >${work_dir}/gpgkey
+ 87       exec 17<>${work_dir}/gpgkey
+ 88     fi
+ 89     ARCHISO_GNUPG_FD=${gpg_key:+17} mkinitcpio -c /etc/mkinitcpio-archiso.conf -k /boot/vmlinuz-linux -g /boot/archiso.img'
+ 90     if [[ ${gpg_key} ]]; then
+ 91       exec 17<&-
+ 92     fi
+ 93 }
+
+95 # Customize installation (airootfs)
+ 96 make_customize_airootfs() {
+ 97     cp -af ${script_path}/airootfs ${work_dir}/${arch}
+103     mkarchiso -r '/root/customize_airootfs.sh' run
+104     rm ${work_dir}/${arch}/airootfs/root/customize_airootfs.sh
+105 }  
+
+107 # Prepare kernel/initramfs ${install_dir}/boot/                                                                            
+108 make_boot() {                                                                                            
+109     mkdir -p /boot/${arch}
+110     cp airootfs/boot/archiso.img /boot/${arch}/archiso.img                  
+111     cp airootfs/boot/vmlinuz-linux /boot/${arch}/vmlinuz                    
+112 }
+
+114 # Add other aditional/extra files to ${install_dir}/boot/
+115 make_boot_extra() {
+116     cp airootfs/boot/memtest86+/memtest.bin /boot/memtest
+118     cp airootfs/boot/intel-ucode.img boot/intel_ucode.img
+120 }
+
+122 # Prepare /${install_dir}/boot/syslinux 
+123 make_syslinux() { 
+124     mkdir -p /boot/syslinux 
+125     for _cfg in ${script_path}/syslinux/*.cfg; do 
+126         sed "s|%ARCHISO_LABEL%|${iso_label}|g; 
+127              s|%INSTALL_DIR%|${install_dir}|g" ${_cfg} > ${work_dir}/iso/${install_dir}/boot/syslinux/${_cfg##*/} 
+128     done 
+129     cp ${script_path}/syslinux/splash.png /boot/syslinux 
+130     cp airootfs/usr/lib/syslinux/bios/*.c32 /boot/syslinux 
+131     cp airootfs/usr/lib/syslinux/bios/lpxelinux.0 /boot/syslinux 
+132     cp airootfs/usr/lib/syslinux/bios/memdisk /boot/syslinux 
+133     mkdir -p /boot/syslinux/hdt 
+134     gzip -c -9 airootfs/usr/share/hwdata/pci.ids > /boot/syslinux/hdt/pciids.gz 
+135     gzip -c -9 airootfs/usr/lib/modules/*-ARCH/modules.alias > /boot/syslinux/hdt/modalias.gz 
+136 } 
+
+138 # Prepare /isolinux
+139 make_isolinux() {
+140     mkdir -p ${work_dir}/iso/isolinux
+141     sed "s|%INSTALL_DIR%|${install_dir}|g" ${script_path}/isolinux/isolinux.cfg > ${work_dir}/iso/isolinux/isolinux.cfg
+142     cp airootfs/usr/lib/syslinux/bios/isolinux.bin ${work_dir}/iso/isolinux/                              
+143     cp airootfs/usr/lib/syslinux/bios/isohdpfx.bin ${work_dir}/iso/isolinux/                              
+144     cp airootfs/usr/lib/syslinux/bios/ldlinux.c32 ${work_dir}/iso/isolinux/                               
+145 }
+
+148 make_efi() {
+149     mkdir -p iso/EFI/boot
+150     cp airootfs/usr/share/efitools/efi/PreLoader.efi iso/EFI/boot/bootx64.efi
+151     cp airootfs/usr/share/efitools/efi/HashTool.efi iso/EFI/boot/
+153     cp airootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi iso/EFI/boot/loader.efi
+154 
+155     mkdir -p iso/loader/entries
+156     cp ${script_path}/efiboot/loader/loader.conf iso/loader/
+157     cp ${script_path}/efiboot/loader/entries/uefi-shell-v2-x86_64.conf iso/loader/entries/
+158     cp ${script_path}/efiboot/loader/entries/uefi-shell-v1-x86_64.conf iso/loader/entries/
+159 
+160     sed "s|%ARCHISO_LABEL%|${iso_label}|g;
+161          s|%INSTALL_DIR%|${install_dir}|g" \
+162         ${script_path}/efiboot/loader/entries/archiso-x86_64-usb.conf > iso/loader/entries/archiso-x86_64.conf
+163     sed "s|%ARCHISO_LABEL%|${iso_label}|g;
+164          s|%INSTALL_DIR%|${install_dir}|g" \
+165         ${script_path}/efiboot/loader/entries/INTEL-archiso-x86_64-usb.conf > iso/loader/entries/INTEL-archiso-x86_64.conf
+166 
+167     # EFI Shell 2.0 for UEFI 2.3+
+168     curl -o ${work_dir}/iso/EFI/shellx64_v2.efi https://raw.githubusercontent.com/tianocore/edk2/master/ShellBinPkg/UefiShell/X    64/Shell.efi
+169     # EFI Shell 1.0 for non UEFI 2.3+
+170     curl -o ${work_dir}/iso/EFI/shellx64_v1.efi https://raw.githubusercontent.com/tianocore/edk2/master/EdkShellBinPkg/FullShel    l/X64/Shell_Full.efi
+171 }
+
+173 # Prepare efiboot.img::/EFI for "El Torito" EFI boot mode
+174 make_efiboot() {
+175     mkdir -p /iso/EFI/archiso
+176     truncate -s 64M iso/EFI/archiso/efiboot.img
+177     mkfs.fat -n ARCHISO_EFI iso/EFI/archiso/efiboot.img
+178 
+179     mkdir -p efiboot
+180     mount iso/EFI/archiso/efiboot.img efiboot
+181 
+182     mkdir -p efiboot/EFI/archiso
+183     cp iso/boot/x86_64/vmlinuz efiboot/EFI/archiso/vmlinuz.efi
+184     cp iso/boot/x86_64/archiso.img efiboot/EFI/archiso/archiso.img
+185 
+186     cp iso/boot/intel_ucode.img efiboot/EFI/archiso/intel_ucode.img
+187 
+188     mkdir -p efiboot/EFI/boot
+189     cp airootfs/usr/share/efitools/efi/PreLoader.efi efiboot/EFI/boot/bootx64.efi
+190     cp airootfs/usr/share/efitools/efi/HashTool.efi efiboot/EFI/boot/
+191 
+192     cp airootfs/usr/lib/systemd/boot/efi/systemd-bootx64.efi efiboot/EFI/boot/loader.efi
+193 
+194     mkdir -p efiboot/loader/entries
+195     cp efiboot/loader/loader.conf ${work_dir}/efiboot/loader/
+196     cp efiboot/loader/entries/uefi-shell-v2-x86_64.conf efiboot/loader/entries/
+197     cp efiboot/loader/entries/uefi-shell-v1-x86_64.conf efiboot/loader/entries/
+198 
+199     sed "s|%ARCHISO_LABEL%|${iso_label}|g;
+200          s|%INSTALL_DIR%|${install_dir}|g" \
+201         ${script_path}/efiboot/loader/entries/archiso-x86_64-cd.conf > ${work_dir}/efiboot/loader/entries/archiso-x86_64.conf
+202 
+203     sed "s|%ARCHISO_LABEL%|${iso_label}|g;
+204          s|%INSTALL_DIR%|${install_dir}|g" \
+205         ${script_path}/efiboot/loader/entries/INTEL-archiso-x86_64-cd.conf > ${work_dir}/efiboot/loader/entries/INTEL-archiso-x86_64.conf
+206 
+207     cp iso/EFI/shellx64_v2.efi efiboot/EFI/
+208     cp iso/EFI/shellx64_v1.efi efiboot/EFI/
+209 
+210     umount -d ${work_dir}/ld airootfs filesystem image
+efiboot
+211 }
+
+213 # Build airootfs filesystem image
+214 make_prepare() {
+215     cp -alf airootfs ${work_dir}
+216     mkarchiso pkglist                                                                    
+217     mkarchiso ${gpg_key:+-g ${gpg_key}} prepare                                          
+218     rm -rf ${work_dir}/airootfs
+220 }
+
+222 # Build ISO
+223 make_iso() {
+224     mkarchiso -L "${iso_label}" -o "${out_dir}" iso "${iso_name}-${iso_version}-x86_64.iso"              
+225 }
+
