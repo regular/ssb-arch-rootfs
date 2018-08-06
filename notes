@@ -39,18 +39,29 @@ For signing the squashfs image (we skip this step)
  86       gpg --export ${gpg_key} >${work_dir}/gpgkey
  87       exec 17<>${work_dir}/gpgkey
  88     fi
+
+Then building the ramfs
+
  89     ARCHISO_GNUPG_FD=${gpg_key:+17} mkinitcpio -c /etc/mkinitcpio-archiso.conf -k /boot/vmlinuz-linux -g /boot/archiso.img'
  90     if [[ ${gpg_key} ]]; then
  91       exec 17<&-
  92     fi
  93 }
 
+--------
+
 95 # Customize installation (airootfs)
+
+Copy overlay files and run a custom script using arch-chroot
+TODO: Take these from `alpi` (ssh-harden and friends)
+
  96 make_customize_airootfs() {
  97     cp -af ${script_path}/airootfs ${work_dir}/${arch}
 103     mkarchiso -r '/root/customize_airootfs.sh' run
 104     rm ${work_dir}/${arch}/airootfs/root/customize_airootfs.sh
 105 }  
+
+----
 
 107 # Prepare kernel/initramfs ${install_dir}/boot/                                                                            
 108 make_boot() {                                                                                            
@@ -59,11 +70,17 @@ For signing the squashfs image (we skip this step)
 111     cp airootfs/boot/vmlinuz-linux /boot/${arch}/vmlinuz                    
 112 }
 
+----
+
 114 # Add other aditional/extra files to ${install_dir}/boot/
 115 make_boot_extra() {
 116     cp airootfs/boot/memtest86+/memtest.bin /boot/memtest
 118     cp airootfs/boot/intel-ucode.img boot/intel_ucode.img
 120 }
+
+---
+
+Can we skip this on a UEFI system?
 
 122 # Prepare /${install_dir}/boot/syslinux 
 123 make_syslinux() { 
@@ -81,6 +98,8 @@ For signing the squashfs image (we skip this step)
 135     gzip -c -9 airootfs/usr/lib/modules/*-ARCH/modules.alias > /boot/syslinux/hdt/modalias.gz 
 136 } 
 
+and this too?
+
 138 # Prepare /isolinux
 139 make_isolinux() {
 140     mkdir -p ${work_dir}/iso/isolinux
@@ -89,6 +108,8 @@ For signing the squashfs image (we skip this step)
 143     cp airootfs/usr/lib/syslinux/bios/isohdpfx.bin ${work_dir}/iso/isolinux/                              
 144     cp airootfs/usr/lib/syslinux/bios/ldlinux.c32 ${work_dir}/iso/isolinux/                               
 145 }
+
+---
 
 148 make_efi() {
 149     mkdir -p iso/EFI/boot
@@ -113,6 +134,8 @@ For signing the squashfs image (we skip this step)
 169     # EFI Shell 1.0 for non UEFI 2.3+
 170     curl -o ${work_dir}/iso/EFI/shellx64_v1.efi https://raw.githubusercontent.com/tianocore/edk2/master/EdkShellBinPkg/FullShel    l/X64/Shell_Full.efi
 171 }
+
+---- 
 
 173 # Prepare efiboot.img::/EFI for "El Torito" EFI boot mode
 174 make_efiboot() {
