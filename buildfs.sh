@@ -120,17 +120,30 @@ make_iso () {
       ${args} \
       -boot-load-size 4 \
       -boot-info-table \
+      \
+      -append_partition 2 Linux mypartition.img \
+      -appended_part_as_gpt \
+      \
       -output "${iso_label}.iso" \
       "build/EFI"
+
+      # this is how to make a parition to add to the ISO
+      # truncate -s 8G mypartition.img
+      # sudo mkfs.ext3 -d root -L mypart -U random mypartition.img
 }
 
 #ssb-pacman bootstrap "$root"
 #install_packages
-make_initcpio
-make_efi
+#make_initcpio
+#make_efi
 
-sudo chown -R root:root "$root"
-mkdir -p build
-sudo mksquashfs "$root" "build/rootfs.sfs" -noappend -comp xz
-make_efiboot_image
+#sudo chown -R root:root "$root"
+#mkdir -p build
+#sudo mksquashfs "$root" "build/rootfs.sfs" -noappend -comp xz
+#make_efiboot_image
 make_iso
+
+# --
+# Now copy to USB stick with
+# sudo dd bs=4M if=PROJECT.iso "of=/dev/disk/by-id/usb-JetFlash_Transcend_32GB_55CY3X3FCBAVU1K8-0:0" status=progress
+# or `gzip PROJECT.iso` for upload
