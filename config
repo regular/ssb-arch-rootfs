@@ -1,1 +1,3 @@
 iso_label="PROJECT"
+iso_application="long project name"
+iso_publisher=$(whoami)

@@ -1,4 +1,5 @@
 #!/usr/bin/bash
+ad
 set -eux -o pipefail
 
 export ssb_appname=ssb-pacman
@@ -26,6 +27,7 @@ install_packages () {
     haveged \
     intel-ucode \
     memtest86+ \
+    syslinux \
     mkinitcpio-nfs-utils \
     nbd \
     zsh \
@@ -44,7 +46,6 @@ make_initcpio () {
 
   # TODO: list hooks on mkcpio cmdline rather than in conf file,
   # so we can configure them here
-
 
   hooks="\
     archiso \
@@ -75,20 +76,20 @@ make_initcpio () {
 make_efi() {
   local efitools="$root/usr/share/efitools"
   local EFI="$root/boot/EFI"
-  mkdir -p "$EFI/boot"
-  cp "$efitools/efi/PreLoader.efi" "$EFI/boot/bootx64.efi"
-  cp "$efitools/efi/HashTool.efi" "$EFI/boot/"
-  cp "$root/usr/lib/systemd/boot/efi/systemd-bootx64.efi" \
+  sudo mkdir -p "$EFI/boot"
+  sudo cp "$efitools/efi/PreLoader.efi" "$EFI/boot/bootx64.efi"
+  sudo cp "$efitools/efi/HashTool.efi" "$EFI/boot/"
+  sudo cp "$root/usr/lib/systemd/boot/efi/systemd-bootx64.efi" \
     "$EFI/boot/loader.efi"
 
   local entries="$root/boot/loader/entries"
-  mkdir -p "$entries"
+  sudo mkdir -p "$entries"
 
-  cp loader/loader.conf "$root/boot/loader"
+  sudo cp loader/loader.conf "$root/boot/loader"
 
   for entry in $(ls loader/entries); do
     sed "s|%ARCHISO_LABEL%|${iso_label}|g" \
-      "loader/entries/$entry" > "$entries/$entry"
+      "loader/entries/$entry" | sudo tee "$entries/$entry"
   done
 
   # cp ${script_path}/efiboot/loader/entries/uefi-shell-v2-x86_64.conf iso/loader/entries/
@@ -102,8 +103,8 @@ make_efi() {
 # Prepare efiboot.img::/EFI for "El Torito" EFI boot mode
 make_efiboot_image () {
   local tmp=$(mktemp -d)
-  truncate -s 64M "$tmp/efiboot.img"
-  mkfs.fat -n ARCHISO_EFI "$tmp/efiboot.img"
+  truncate -s 900M "$tmp/efiboot.img"
+  mkfs.fat -n "$iso_label" "$tmp/efiboot.img"
 
   local efiboot="$tmp/efiboot"
   mkdir -p "$efiboot"
@@ -118,18 +119,49 @@ make_efiboot_image () {
 # cp iso/EFI/shellx64_v2.efi efiboot/EFI/
 # cp iso/EFI/shellx64_v1.efi efiboot/EFI/
 
+  sudo mkdir -p "$efiboot/arch/x86_64"
+  sudo cp build/rootfs.sfs "$efiboot/arch/x86_64/airootfs.sfs"
+
   sudo umount -d "$efiboot"
-  
-  cp "$tmp/efiboot.img" "$root/boot/EFI/"
+  mkdir -p build/EFI
+  sudo cp "$tmp/efiboot.img" "build/EFI"
 }
 
+make_iso () {
+  local args
+  # add an EFI "El Torito" boot image (FAT filesystem) to ISO-9660 image.
+  args="-eltorito-alt-boot
+        -e efiboot.img
+        -no-emul-boot
+        -eltorito-alt-boot
+        -efi-boot-part --efi-boot-image"
+
+  sudo xorriso -as mkisofs \
+      -iso-level 3 \
+      -full-iso9660-filenames \
+      -volid "ISO-${iso_label}" \
+      -appid "${iso_application}" \
+      -publisher "${iso_publisher}" \
+      -preparer "prepared by ssb-rootfs" \
+      ${args} \
+      -boot-load-size 4 \
+      -boot-info-table \
+      -output "${iso_label}.iso" \
+      "build/EFI"
+
+      #-eltorito-boot isolinux/isolinux.bin \
+      #-eltorito-catalog isolinux/boot.cat \
+      #-isohybrid-mbr ${work_dir}/iso/isolinux/isohdpfx.bin \
+}
 
 #ssb-pacman bootstrap "$root"
 #install_packages
 #extract_archiso_script
 #make_initcpio
 make_efi
-make_efiboot_image
 
 sudo chown -R root:root "$root"
-sudo mksquashfs "$root" "build/rootfs.sfs" -noappend -comp xz
+mkdir -p build
+#sudo mksquashfs "$root" "build/rootfs.sfs" -noappend -comp xz
+make_efiboot_image
+make_iso
