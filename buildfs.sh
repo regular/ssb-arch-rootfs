@@ -5,7 +5,6 @@ set -eux -o pipefail
 export ssb_appname=ssb-pacman
 root=root
 bin="$HOME/.ssb-pacman/node_modules/ssb-pacman/bin"
-archisodir=$(mktemp -d)
 
 source ./config
 
@@ -15,25 +14,13 @@ ssb-pacman () {
   $bin/ssb-pacman-$cmd $*
 }
 
-extract_archiso_script () {
-  archiso_id=$(sbot pacman.versions archiso --arch x86_64 --sort | jsonpath-dl key | head -n1)
-  echo "Extracting" "$(sbot pacman.get "$archiso_id" | jsonpath-dl content.name)" "..."
-  ssb-pacman extract "$archiso_id" "$archisodir"
-}
-
 install_packages () {
   pkgs="\
-    base \
     haveged \
     intel-ucode \
     memtest86+ \
-    syslinux \
-    mkinitcpio-nfs-utils \
-    nbd \
-    zsh \
+    efitools
   "
-  pkgs+=" efitools"
-  #pkgs+=" syslinux"
 
   for pkg in $pkgs; do
     ssb-pacman install "$pkg" "$root"
@@ -50,15 +37,10 @@ make_initcpio () {
   hooks="\
     archiso \
     archiso_shutdown \
-    archiso_pxe_common \
-    archiso_pxe_nbd \
-    archiso_pxe_http \
-    archiso_pxe_nfs \
     archiso_loop_mnt \
   "
-  local src="$archisodir/usr/lib/initcpio"
+  local src="initcpio"
   local dest="$root/etc/initcpio"
-  local script_path="$archisodir/usr/share/archiso/configs/releng"
 
   for hook in $hooks; do
     sudo cp "$src/hooks/$hook" "$dest/hooks"
@@ -69,7 +51,7 @@ make_initcpio () {
   sudo cp "$src/install/archiso_kms" "$dest/install"
   sudo cp "$src/archiso_shutdown" "$dest"
 
-  sudo cp "${script_path}/mkinitcpio.conf" "$root/etc/mkinitcpio-archiso.conf"
+  sudo cp "$src/mkinitcpio.conf" "$root/etc/mkinitcpio-archiso.conf"
   sudo arch-chroot "$root" mkinitcpio -c /etc/mkinitcpio-archiso.conf -k /boot/vmlinuz-linux -g /boot/archiso.img
 }
 
@@ -91,13 +73,6 @@ make_efi() {
     sed "s|%ARCHISO_LABEL%|${iso_label}|g" \
       "loader/entries/$entry" | sudo tee "$entries/$entry"
   done
-
-  # cp ${script_path}/efiboot/loader/entries/uefi-shell-v2-x86_64.conf iso/loader/entries/
-  # cp ${script_path}/efiboot/loader/entries/uefi-shell-v1-x86_64.conf iso/loader/entries/
-  # EFI Shell 2.0 for UEFI 2.3+
-  # curl -o ${work_dir}/iso/EFI/shellx64_v2.efi https://raw.githubusercontent.com/tianocore/edk2/master/ShellBinPkg/UefiShell/X    64/Shell.efi
-  # EFI Shell 1.0 for non UEFI 2.3+
-  # curl -o ${work_dir}/iso/EFI/shellx64_v1.efi https://raw.githubusercontent.com/tianocore/edk2/master/EdkShellBinPkg/FullShel    l/X64/Shell_Full.efi
 }
 
 # Prepare efiboot.img::/EFI for "El Torito" EFI boot mode
@@ -115,9 +90,6 @@ make_efiboot_image () {
 
   sudo cp -rv "$root/boot/EFI/boot" "$efiboot/EFI"
   sudo cp -rv "$root/boot/loader" "$efiboot"
-
-# cp iso/EFI/shellx64_v2.efi efiboot/EFI/
-# cp iso/EFI/shellx64_v1.efi efiboot/EFI/
 
   sudo mkdir -p "$efiboot/arch/x86_64"
   sudo cp build/rootfs.sfs "$efiboot/arch/x86_64/airootfs.sfs"
@@ -148,20 +120,15 @@ make_iso () {
       -boot-info-table \
       -output "${iso_label}.iso" \
       "build/EFI"
-
-      #-eltorito-boot isolinux/isolinux.bin \
-      #-eltorito-catalog isolinux/boot.cat \
-      #-isohybrid-mbr ${work_dir}/iso/isolinux/isohdpfx.bin \
 }
 
 #ssb-pacman bootstrap "$root"
 #install_packages
-#extract_archiso_script
-#make_initcpio
+make_initcpio
 make_efi
 
 sudo chown -R root:root "$root"
 mkdir -p build
-#sudo mksquashfs "$root" "build/rootfs.sfs" -noappend -comp xz
+sudo mksquashfs "$root" "build/rootfs.sfs" -noappend -comp xz
 make_efiboot_image
 make_iso
