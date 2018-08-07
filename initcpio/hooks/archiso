@@ -204,7 +204,7 @@ archiso_mount_handler() {
     fi
     mkdir -p -m 0700 "/run/archiso/cowspace/${cow_directory}"
 
-    _mnt_sfs "/run/archiso/bootmnt/${archisobasedir}/${arch}/airootfs.sfs" "/run/archiso/sfs/airootfs"
+    _mnt_sfs "/run/archiso/bootmnt/rootfs.sfs" "/run/archiso/sfs/airootfs"
     if [[ -f "/run/archiso/sfs/airootfs/airootfs.img" ]]; then
         _mnt_dmsnapshot "/run/archiso/sfs/airootfs/airootfs.img" "${newroot}" "/"
     else

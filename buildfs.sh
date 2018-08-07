@@ -15,9 +15,11 @@ ssb-pacman () {
 }
 
 install_packages () {
+  # syslinux is needed for memdiskfind
   pkgs="\
     haveged \
     intel-ucode \
+    syslinux \
     memtest86+ \
     efitools
   "
@@ -92,7 +94,7 @@ make_efiboot_image () {
   sudo cp -rv "$root/boot/loader" "$efiboot"
 
   sudo mkdir -p "$efiboot/arch/x86_64"
-  sudo cp build/rootfs.sfs "$efiboot/arch/x86_64/airootfs.sfs"
+  sudo cp build/rootfs.sfs "$efiboot/rootfs.sfs"
 
   sudo umount -d "$efiboot"
   mkdir -p build/EFI
